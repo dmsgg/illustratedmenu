@@ -1,0 +1,379 @@
+<meta name='viewport' content='width=device-width, initial-scale=1'/><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Text → Illustrated Menu (Google Images)</title>
+<style>
+  :root { --pad: 14px; --radius: 10px; --gap: 12px; }
+  * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+  body { margin: 0; background:#0f1115; color:#e7e9ee; }
+  header { padding: 20px; text-align:center; border-bottom:1px solid #222630; }
+  header h1 { margin: 4px 0 0; font-size: 20px; font-weight:700; }
+  header p { margin: 6px 0 0; opacity:.7; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px; display:grid; gap: var(--gap); }
+  .panel { background:#151922; border:1px solid #222630; border-radius: var(--radius); padding: var(--pad); }
+  .row { display:flex; gap: var(--gap); flex-wrap: wrap; align-items:center; }
+  button, .ghost {
+    background:#2b3243; color:#fff; border:1px solid #3a4257; border-radius:8px;
+    padding:10px 14px; font-weight:600; cursor:pointer;
+  }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .ghost { background:transparent; }
+  .hint { font-size: 12px; opacity: .7; }
+
+  textarea {
+    width:100%; min-height: 220px; resize: vertical;
+    background:#0e1320; color:#e7e9ee; border:1px solid #28324a; border-radius:8px; padding:10px;
+  }
+
+  table { width:100%; border-collapse: collapse; }
+  td, th { padding: 8px; border-bottom:1px solid #202637; }
+  td input { width:100%; padding:8px; background:#0e1320; color:#e7e9ee; border:1px solid #28324a; border-radius:6px; }
+
+  .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--gap); }
+  .card { background:#121622; border:1px solid #242b3a; border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+  .card img { width:100%; height:170px; object-fit:cover; background:#0b0d13; }
+  .card .info { padding: 10px; display:flex; flex-direction:column; gap:6px; }
+  .actions { display:flex; gap:8px; flex-wrap:wrap; }
+  .src { font-size:12px; opacity:.75; }
+  .pill { padding:3px 8px; border-radius:999px; font-size:12px; background:#1e2433; border:1px solid #2b344a; }
+
+  /* Export overlay */
+  #overlay {
+    position: fixed; inset: 0; background: rgba(10,12,18,.7);
+    display:none; align-items:center; justify-content:center; z-index: 9999;
+  }
+  .overlay-box {
+    background:#121622; border:1px solid #2b344a; border-radius:12px; padding:18px 22px; width:min(92vw, 420px); text-align:center;
+  }
+  .spinner {
+    width:28px; height:28px; border:3px solid #3a4257; border-top-color:#9aa8ff; border-radius:50%;
+    margin: 10px auto 6px; animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  a { color:#c7d1ff; text-decoration:none; }
+  a:hover { text-decoration:underline; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Text → Illustrated Menu (Google)</h1>
+    <p>Paste your menu text, parse dishes, then fetch photos (Google Custom Search).</p>
+  </header>
+
+  <main>
+    <!-- Paste/Drop TEXT -->
+    <section class="panel" id="textPanel">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Menu text</h3>
+        <div class="row">
+          <button class="ghost" id="btnResetTop" title="Start over">Start over</button>
+          <button id="btnParse">1) Parse dishes</button>
+        </div>
+      </div>
+      <textarea id="rawText" placeholder="One dish per line. Prices or dots are fine; they'll be ignored.&#10;Supports English / Español / Français.&#10;Examples:&#10;Fish & chips&#10;Omelette jambon (4 œufs)&#10;Ceviche de pescado&#10;Filete de res en salsa"></textarea>
+      <div class="hint" style="margin-top:8px">Tip: Keep it simple -- one dish per line yields the best results.</div>
+    </section>
+
+    <!-- Editable DISH LIST -->
+    <section class="panel" id="itemsPanel" style="display:none">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Dishes (editable)</h3>
+        <div class="row" style="gap:10px">
+          <button class="ghost" id="btnAddRow">Add row</button>
+          <button id="btnFindPhotos">2) Find photos</button>
+        </div>
+      </div>
+
+      <table id="itemsTable" style="margin-top:10px">
+        <thead><tr><th>Dish</th><th style="width:60px"></th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div class="row" style="gap:10px; margin-top:12px">
+        <button class="ghost" id="btnExportJSON">Export JSON</button>
+        <button class="ghost" id="btnExportHTML">Export gallery as HTML</button>
+      </div>
+    </section>
+
+    <!-- GALLERY -->
+    <section class="panel" id="galleryPanel" style="display:none">
+      <div class="row" style="justify-content:space-between">
+        <h3 style="margin:0">Illustrated Menu</h3>
+        <span class="hint">Powered by Google Custom Search (Images).</span>
+      </div>
+      <div class="grid" id="gallery"></div>
+    </section>
+
+    <section class="panel" style="text-align:center">
+      <button id="btnResetBottom">Start over</button>
+    </section>
+  </main>
+
+  <!-- Export overlay -->
+  <div id="overlay" role="alert" aria-live="assertive">
+    <div class="overlay-box">
+      <div class="spinner"></div>
+      <strong>Preparing export…</strong>
+      <div class="hint" style="margin-top:6px">This can take a little while for large menus.</div>
+    </div>
+  </div>
+
+  <script>
+    // ======= Your Google credentials (entire web, multilingual) =======
+    const GOOGLE_API_KEY = "AIzaSyD8fa2iHqzyWA-TIVetY8kI1xUOTvzUWHs";
+    const GOOGLE_CSE_ID  = "e794f808460be47c3";
+    // =================================================================
+
+    const els = {
+      rawText: document.getElementById('rawText'),
+      btnParse: document.getElementById('btnParse'),
+      itemsPanel: document.getElementById('itemsPanel'),
+      itemsTableBody: document.querySelector('#itemsTable tbody'),
+      btnAddRow: document.getElementById('btnAddRow'),
+      btnFindPhotos: document.getElementById('btnFindPhotos'),
+      galleryPanel: document.getElementById('galleryPanel'),
+      gallery: document.getElementById('gallery'),
+      btnExportJSON: document.getElementById('btnExportJSON'),
+      btnExportHTML: document.getElementById('btnExportHTML'),
+      overlay: document.getElementById('overlay'),
+      btnResetTop: document.getElementById('btnResetTop'),
+      btnResetBottom: document.getElementById('btnResetBottom'),
+    };
+
+    let items = []; // [{ name, results:[], idx:0 }]
+
+    // Allow dropping a .txt file directly into the textarea
+    els.rawText.addEventListener('dragover', e => { e.preventDefault(); });
+    els.rawText.addEventListener('drop', async e => {
+      e.preventDefault();
+      const f = e.dataTransfer.files?.[0];
+      if (f && f.type.startsWith('text/')) {
+        const text = await f.text();
+        els.rawText.value = text;
+      }
+    });
+
+    // ---- Parse (no sections, ignore prices) ----
+    function smartParse(text) {
+      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      const results = [];
+      for (let raw of lines) {
+        raw = raw.replace(/\.+\s*/g, ' ').replace(/\s{2,}/g, ' ').trim();
+        let name = raw.replace(/(?:\$?\s*\d+(?:\.\d{1,2})?)\s*$/,'').trim();
+        name = name.replace(/^[-•\s]+/, '');
+        if (name) results.push({ name, results:[], idx:0 });
+      }
+      return results;
+    }
+
+    function renderTable() {
+      els.itemsTableBody.innerHTML = '';
+      items.forEach((it, idx) => {
+        const tr = document.createElement('tr');
+
+        const tdName = document.createElement('td');
+        const iName = document.createElement('input'); iName.value = it.name;
+        iName.addEventListener('input', e => items[idx].name = e.target.value);
+        tdName.appendChild(iName);
+
+        const tdDel = document.createElement('td');
+        const del = document.createElement('button'); del.textContent = '✕';
+        del.addEventListener('click', () => { items.splice(idx,1); renderTable(); });
+        tdDel.appendChild(del);
+
+        tr.append(tdName, tdDel);
+        els.itemsTableBody.appendChild(tr);
+      });
+      els.itemsPanel.style.display = items.length ? 'block' : 'none';
+    }
+
+    els.btnParse.addEventListener('click', () => {
+      items = smartParse(els.rawText.value);
+      if (!items.length) alert('No dishes found. Put one per line.');
+      renderTable();
+    });
+
+    els.btnAddRow.addEventListener('click', () => {
+      items.push({ name:'New dish', results:[], idx:0 });
+      renderTable();
+    });
+
+    // ---- Google search helpers ----
+    // Build a strong multilingual query + negatives for common confusions.
+    function buildQuery(dish) {
+      const base = dish
+        .replace(/&/g, 'and')
+        .replace(/\bfish\s*n?\s*chips?\b/i, 'fish and chips')
+        .replace(/\(.*?\)/g, '') // remove parentheticals e.g., (4 eggs)
+        .trim();
+
+      const extras = [];
+      if (/fish and chips/i.test(base)) extras.push('british pub fried fries');
+
+      // add multilingual synonyms for omelette / steak / rabbit etc.
+      const syn = [];
+      if (/\bomelet(te)?\b/i.test(base)) syn.push('omelette', 'omelet', 'huevo', 'œufs');
+      if (/\brabbit\b/i.test(base)) syn.push('lapin', 'conejo');
+      if (/\bbeef|steak\b/i.test(base)) syn.push('bœuf', 'res', 'carne');
+      if (/\bfish\b/i.test(base)) syn.push('poisson', 'pescado');
+
+      const negatives = '-packaging -logo -menu -illustration -tortilla -nachos -guacamole -ceviche -hand -cigarette';
+
+      return `${base} ${extras.join(' ')} ${syn.join(' ')} dish plated ${negatives}`.trim();
+    }
+
+    async function googleImageSearch(query, { num=10, safe='off', imgSize='large' } = {}) {
+      const url = new URL('https://www.googleapis.com/customsearch/v1');
+      url.searchParams.set('key', GOOGLE_API_KEY);
+      url.searchParams.set('cx', GOOGLE_CSE_ID);
+      url.searchParams.set('q', query);
+      url.searchParams.set('searchType', 'image');
+      url.searchParams.set('num', String(num));
+      url.searchParams.set('safe', safe);
+      url.searchParams.set('imgSize', imgSize);
+      // optional: prefer photo files
+      url.searchParams.set('fileType', 'jpg');
+      // hint UI language auto: let Google infer; could add hl= for forcing.
+
+      const res = await fetch(url.toString());
+      if (!res.ok) throw new Error('Google API error '+res.status);
+      const data = await res.json();
+      return (data.items || []).map(it => ({
+        src: it.link,
+        context: it.image?.contextLink || it.link,
+        title: it.title || '',
+        displayLink: it.displayLink || ''
+      }));
+    }
+
+    // ---- Fetch photos + render cards ----
+    els.btnFindPhotos.addEventListener('click', async () => {
+      els.gallery.innerHTML = '';
+      els.galleryPanel.style.display = 'block';
+
+      for (const it of items) {
+        // card skeleton
+        const card = document.createElement('div');
+        card.className = 'card';
+        const img = document.createElement('img'); img.alt = it.name;
+        const info = document.createElement('div'); info.className = 'info';
+        const title = document.createElement('div'); title.innerHTML = `<strong>${escapeHtml(it.name)}</strong>`;
+        const src = document.createElement('div'); src.className = 'src'; src.textContent = 'Searching…';
+        const actions = document.createElement('div'); actions.className = 'actions';
+        const reroll = document.createElement('button'); reroll.textContent = 'Re-roll';
+        actions.append(reroll);
+        info.append(title, actions, src);
+        card.append(img, info);
+        els.gallery.appendChild(card);
+
+        // search if not already
+        if (!it.results || it.results.length === 0) {
+          try {
+            const q = buildQuery(it.name);
+            it.results = await googleImageSearch(q, { num: 10, safe: 'off', imgSize: 'large' });
+          } catch (e) {
+            console.warn(e);
+            src.textContent = 'Search failed';
+            img.alt = 'Image search failed';
+            continue;
+          }
+        }
+
+        // function to show index
+        const showIdx = (idx) => {
+          if (!it.results.length) {
+            src.textContent = 'No results';
+            img.alt = 'No image';
+            img.removeAttribute('src');
+            return;
+          }
+          it.idx = (idx + it.results.length) % it.results.length;
+          const r = it.results[it.idx];
+          img.src = r.src;
+          src.innerHTML = `Source: <a href="${r.context}" target="_blank" rel="noopener">${escapeHtml(r.displayLink || new URL(r.context).hostname)}</a>`;
+        };
+
+        reroll.addEventListener('click', () => showIdx(it.idx + 1));
+
+        // initial render
+        showIdx(0);
+      }
+    });
+
+    // ---- Export (with overlay) ----
+    els.btnExportJSON.addEventListener('click', () => {
+      const lite = items.map(i => ({ name: i.name, chosen: i.results?.[i.idx]?.src || '' }));
+      const blob = new Blob([JSON.stringify(lite, null, 2)], {type:'application/json'});
+      downloadBlob(blob, 'menu-items.json');
+    });
+
+    els.btnExportHTML.addEventListener('click', async () => {
+      showOverlay(true);
+      els.btnExportHTML.disabled = true;
+      await new Promise(r => setTimeout(r, 50)); // let overlay paint
+
+      try {
+        const list = items.map(i => ({
+          name: i.name,
+          src: i.results?.[i.idx]?.src || '',
+          link: i.results?.[i.idx]?.context || '',
+          host: i.results?.[i.idx]?.displayLink || ''
+        }));
+
+        const html = buildGalleryExport(list);
+        const blob = new Blob([html], {type:'text/html'});
+        downloadBlob(blob, 'illustrated-menu.html');
+      } finally {
+        els.btnExportHTML.disabled = false;
+        showOverlay(false);
+      }
+    });
+
+    function buildGalleryExport(list) {
+      return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Illustrated Menu</title>
+<style>body{font-family:system-ui,Segoe UI,Roboto,Arial;margin:0;background:#0f1115;color:#e7e9ee}
+h1{padding:16px 20px;margin:0;border-bottom:1px solid #222630}
+.grid{display:grid;gap:12px;padding:20px;grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+.card{background:#121622;border:1px solid #242b3a;border-radius:12px;overflow:hidden}
+.card img{width:100%;height:170px;object-fit:cover;background:#0b0d13}
+.info{padding:10px}
+.src{font-size:12px;opacity:.75}
+a{color:#c7d1ff;text-decoration:none}a:hover{text-decoration:underline}
+</style></head><body>
+<h1>Illustrated Menu</h1>
+<div class="grid">
+${list.map(i => `<div class="card">
+<img loading="lazy" alt="${escapeHtml(i.name)}" src="${escapeHtml(i.src)}">
+<div class="info"><div><strong>${escapeHtml(i.name)}</strong></div>
+<div class="src">Source: ${i.link ? `<a href="${escapeHtml(i.link)}" target="_blank" rel="noopener">${escapeHtml(i.host||i.link)}</a>` : 'N/A'}</div>
+</div></div>`).join('')}
+</div></body></html>`;
+    }
+
+    // ---- Helpers ----
+    function downloadBlob(blob, filename) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+    function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+    function showOverlay(show) { document.getElementById('overlay').style.display = show ? 'flex' : 'none'; }
+
+    function resetApp() {
+      items = [];
+      els.rawText.value = '';
+      els.itemsTableBody.innerHTML = '';
+      els.itemsPanel.style.display = 'none';
+      els.gallery.innerHTML = '';
+      els.galleryPanel.style.display = 'none';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    els.btnResetTop.addEventListener('click', resetApp);
+    els.btnResetBottom.addEventListener('click', resetApp);
+  </script>
+</body>
+</html>
